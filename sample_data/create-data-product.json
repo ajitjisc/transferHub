@@ -1,0 +1,32 @@
+{
+  "name": "Orders Feed",
+  "description": "Daily secure ingestion of order extracts",
+  "owner": "Data Platform",
+  "environment": "dev",
+  "expectedFiles": [
+    {
+      "fileName": "orders.csv",
+      "contentType": "text/csv",
+      "minSizeBytes": 1,
+      "description": "Daily order file"
+    },
+    {
+      "fileName": "manifest.json",
+      "contentType": "application/json",
+      "minSizeBytes": 1,
+      "description": "Transfer manifest"
+    }
+  ],
+  "validationRules": [
+    {
+      "ruleType": "contentType",
+      "target": "orders.csv",
+      "value": "text/csv"
+    },
+    {
+      "ruleType": "fileNameMatches",
+      "target": "manifest.json",
+      "value": "^manifest\\.json$"
+    }
+  ]
+}

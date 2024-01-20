@@ -1,0 +1,145 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: TransferHub modern data movement API
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures:
+      - x86_64
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        TRANSFER_TABLE: !Ref TransferTable
+        LANDING_BUCKET: !Ref LandingBucket
+        AWS_REGION: !Ref AWS::Region
+        UPLOAD_URL_EXPIRY_SECONDS: 900
+        JWT_ISSUER: https://auth.example.com
+        JWT_AUDIENCE: transferhub-api
+        JWT_SECRET: local-dev-secret
+        API_KEYS_JSON: '{"customer-a":"local-api-key-a"}'
+
+Resources:
+  TransferTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: transferhub-transfers
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  LandingBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: transferhub-landing
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  TransferHubApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: TransferHubApi
+      StageName: prod
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization,x-api-key'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: TransferHubRequestAuthorizer
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          TransferHubRequestAuthorizer:
+            FunctionPayloadType: REQUEST
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            Identity:
+              Headers:
+                - Authorization
+                - x-api-key
+              ReauthorizeEvery: 0
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/auth/authorizer.handler
+      Timeout: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/auth/authorizer.ts
+        Minify: false
+        Sourcemap: true
+        Target: es2022
+
+  TransferHubApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Handler: src/api/handler.handler
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TransferTable
+        - S3CrudPolicy:
+            BucketName: !Ref LandingBucket
+      Events:
+        HealthRoute:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TransferHubApi
+            Path: /v1/health
+            Method: GET
+            Auth:
+              Authorizer: NONE
+        ProxyRoute:
+          Type: Api
+          Properties:
+            RestApiId: !Ref TransferHubApi
+            Path: /v1/{proxy+}
+            Method: ANY
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        EntryPoints:
+          - src/api/handler.ts
+        Minify: false
+        Sourcemap: true
+        Target: es2022
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL for the deployed TransferHub API
+    Value: !Sub 'https://${TransferHubApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+  TransferTableName:
+    Value: !Ref TransferTable
+  LandingBucketName:
+    Value: !Ref LandingBucket

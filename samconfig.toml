@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.deploy.parameters]
+stack_name = "transferHub"
+region = "eu-west-2"
+resolve_s3 = false
+s3_bucket = "transferhub-landing"
+s3_prefix = "sam-artifacts/transferHub"
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = false

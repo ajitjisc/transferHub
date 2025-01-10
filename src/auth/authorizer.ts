@@ -3,7 +3,6 @@ import type {
   APIGatewayRequestAuthorizerEvent
 } from 'aws-lambda';
 import { validateApiKey } from './apiKey';
-import { verifyJwt } from './jwt';
 
 const buildPolicy = (
   principalId: string,
@@ -32,18 +31,11 @@ export const handler = async (
     Object.entries(event.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value])
   );
 
-  const claims = verifyJwt(headers.authorization);
-  const apiKeyOwner = validateApiKey(headers['x-api-key']);
+  const apiKeyOwner = await validateApiKey(headers['x-api-key']);
 
-  if (claims.producer !== apiKeyOwner || claims.sub !== apiKeyOwner) {
-    throw new Error('Unauthorized');
-  }
-
-  return buildPolicy(claims.sub, 'Allow', event.methodArn, {
-    principalId: claims.sub,
-    producer: claims.producer,
-    sub: claims.sub,
-    scope: claims.scope.join(','),
+  return buildPolicy(apiKeyOwner, 'Allow', event.methodArn, {
+    principalId: apiKeyOwner,
+    producer: apiKeyOwner,
     apiKeyOwner
   });
 };

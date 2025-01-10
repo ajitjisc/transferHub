@@ -1,6 +1,5 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import type { AuthorizerContext } from '../models/auth';
-import { ensureScopes } from '../auth/scopes';
 import { errorResponse, successResponse } from './response';
 import { HttpError, assertNonEmptyString } from '../utils/validation';
 import { createId } from '../utils/id';
@@ -26,7 +25,7 @@ interface RouteDefinition {
   method: string;
   pattern: RegExp;
   params: string[];
-  scopes?: string[];
+  protected?: boolean;
   handler: (args: {
     event: APIGatewayProxyEvent;
     body: unknown;
@@ -70,16 +69,9 @@ const getAuthorizerContext = (event: APIGatewayProxyEvent): AuthorizerContext | 
     return undefined;
   }
 
-  const rawScope = context.scope;
-  const scope =
-    typeof rawScope === 'string'
-      ? rawScope.split(',').map((item) => item.trim()).filter(Boolean)
-      : [];
-
   if (
     typeof context.principalId !== 'string' ||
     typeof context.producer !== 'string' ||
-    typeof context.sub !== 'string' ||
     typeof context.apiKeyOwner !== 'string'
   ) {
     return undefined;
@@ -88,8 +80,6 @@ const getAuthorizerContext = (event: APIGatewayProxyEvent): AuthorizerContext | 
   return {
     principalId: context.principalId,
     producer: context.producer,
-    sub: context.sub,
-    scope,
     apiKeyOwner: context.apiKeyOwner
   };
 };
@@ -99,6 +89,7 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/health$/,
     params: [],
+    protected: false,
     handler: async () => ({
       status: 'ok',
       service: 'transferhub',
@@ -109,7 +100,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/data-products$/,
     params: [],
-    scopes: ['data-product:create'],
     statusCode: 201,
     handler: async ({ body, auth, services }) =>
       services.dataProductService.createDataProduct(body as never, auth!.producer)
@@ -118,7 +108,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/data-products$/,
     params: [],
-    scopes: ['data-product:read'],
     handler: async ({ auth, services }) =>
       services.dataProductService.listDataProducts(auth!.producer)
   },
@@ -126,7 +115,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/data-products\/([^/]+)$/,
     params: ['dataProductId'],
-    scopes: ['data-product:read'],
     handler: async ({ params, auth, services }) =>
       services.dataProductService.getDataProduct(params.dataProductId, auth!.producer)
   },
@@ -134,7 +122,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/data-products\/([^/]+)\/transfer-intents$/,
     params: ['dataProductId'],
-    scopes: ['transfer:create'],
     statusCode: 201,
     handler: async ({ params, body, auth, services }) =>
       services.transferIntentService.createTransferIntent(
@@ -147,7 +134,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/data-products\/([^/]+)\/transfer-intents$/,
     params: ['dataProductId'],
-    scopes: ['transfer:read'],
     handler: async ({ params, auth, services }) =>
       services.transferIntentService.listTransferIntents(params.dataProductId, auth!.producer)
   },
@@ -155,7 +141,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/transfer-intents\/([^/]+)$/,
     params: ['intentId'],
-    scopes: ['transfer:read'],
     handler: async ({ params, auth, services }) =>
       services.transferIntentService.getTransferIntent(params.intentId, auth!.producer)
   },
@@ -163,7 +148,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/transfer-intents\/([^/]+):generateUploadUrl$/,
     params: ['intentId'],
-    scopes: ['transfer:create'],
     handler: async ({ params, auth, services }) =>
       services.uploadUrlService.generateUploadUrls(params.intentId, auth!.producer)
   },
@@ -171,7 +155,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/transfer-intents\/([^/]+):submit$/,
     params: ['intentId'],
-    scopes: ['transfer:submit'],
     handler: async ({ params, auth, services }) => {
       await services.transferIntentService.submitTransferIntent(params.intentId, auth!.producer);
       const validationResult = await services.validationService.validateTransferIntent(
@@ -193,7 +176,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/transfer-intents\/([^/]+):cancel$/,
     params: ['intentId'],
-    scopes: ['transfer:submit'],
     handler: async ({ params, auth, services }) =>
       services.transferIntentService.cancelTransferIntent(params.intentId, auth!.producer)
   },
@@ -201,7 +183,6 @@ const routes: RouteDefinition[] = [
     method: 'POST',
     pattern: /^\/v1\/transfer-intents\/([^/]+):validate$/,
     params: ['intentId'],
-    scopes: ['transfer:validate'],
     handler: async ({ params, auth, services }) =>
       services.validationService.validateTransferIntent(params.intentId, auth!.producer)
   },
@@ -209,7 +190,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/transfer-intents\/([^/]+)\/events$/,
     params: ['intentId'],
-    scopes: ['transfer:read'],
     handler: async ({ params, auth, services }) => {
       await services.transferIntentService.getTransferIntent(params.intentId, auth!.producer);
       return services.transferEventService.listEvents(params.intentId);
@@ -219,7 +199,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/transfer-events$/,
     params: [],
-    scopes: ['transfer:read'],
     handler: async ({ event, auth, services }) => {
       const intentId = assertNonEmptyString(
         event.queryStringParameters?.intentId,
@@ -233,7 +212,6 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/transfer-intents\/([^/]+)\/validation$/,
     params: ['intentId'],
-    scopes: ['transfer:read'],
     handler: async ({ params, auth, services }) =>
       services.validationService.getValidationResult(params.intentId, auth!.producer)
   },
@@ -241,14 +219,12 @@ const routes: RouteDefinition[] = [
     method: 'GET',
     pattern: /^\/v1\/metrics$/,
     params: [],
-    scopes: ['metrics:read'],
     handler: async ({ auth, services }) => services.metricsService.getMetrics(auth!.producer)
   },
   {
     method: 'GET',
     pattern: /^\/v1\/dashboard$/,
     params: [],
-    scopes: ['metrics:read'],
     handler: async ({ auth, services }) => services.dashboardService.getDashboard(auth!.producer)
   }
 ];
@@ -277,11 +253,10 @@ export const routeRequest = async (
     }, {});
     const auth = getAuthorizerContext(event);
 
-    if (route.scopes && route.scopes.length > 0) {
+    if (route.protected !== false) {
       if (!auth) {
         throw new HttpError(401, 'UNAUTHORIZED', 'Missing authorizer context');
       }
-      ensureScopes(auth.scope, route.scopes);
     }
 
     const data = await route.handler({

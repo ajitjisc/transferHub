@@ -14,8 +14,8 @@ import { UploadUrlService } from '../services/uploadUrlService';
 import { ValidationService } from '../services/validationService';
 import { routeRequest, type ApiServices } from './routes';
 
-const buildServices = (): ApiServices => {
-  const config = getConfig();
+const buildServices = async (): Promise<ApiServices> => {
+  const config = await getConfig();
   const dynamoDocumentClient = DynamoDBDocumentClient.from(
     new DynamoDBClient({
       region: config.awsRegion
@@ -47,7 +47,8 @@ const buildServices = (): ApiServices => {
   const uploadUrlService = new UploadUrlService(
     s3Repository,
     transferIntentService,
-    transferEventService
+    transferEventService,
+    config.uploadUrlExpirySeconds
   );
   const validationService = new ValidationService(
     s3Repository,
@@ -73,10 +74,10 @@ const buildServices = (): ApiServices => {
   };
 };
 
-const services = buildServices();
+const servicesPromise = buildServices();
 
 export const handler = async (
   event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => routeRequest(event, services);
+): Promise<APIGatewayProxyResult> => routeRequest(event, await servicesPromise);
 
 export { buildServices };

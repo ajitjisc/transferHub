@@ -1,5 +1,4 @@
 import type { ObjectStorageRepository } from '../repositories/s3Repository';
-import { getConfig } from '../config';
 import { TransferEventService } from './transferEventService';
 import { TransferIntentService } from './transferIntentService';
 
@@ -7,7 +6,8 @@ export class UploadUrlService {
   constructor(
     private readonly storageRepository: ObjectStorageRepository,
     private readonly transferIntentService: TransferIntentService,
-    private readonly transferEventService: TransferEventService
+    private readonly transferEventService: TransferEventService,
+    private readonly uploadUrlExpirySeconds: number
   ) {}
 
   async generateUploadUrls(intentId: string, authenticatedProducer: string): Promise<{
@@ -54,7 +54,7 @@ export class UploadUrlService {
 
     return {
       intentId: intent.intentId,
-      expiresInSeconds: getConfig().uploadUrlExpirySeconds,
+      expiresInSeconds: this.uploadUrlExpirySeconds,
       uploadUrls
     };
   }

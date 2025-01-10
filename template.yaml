@@ -12,13 +12,9 @@ Globals:
     Environment:
       Variables:
         TRANSFER_TABLE: !Ref TransferTable
-        LANDING_BUCKET: !Ref LandingBucket
-        AWS_REGION: !Ref AWS::Region
+        LANDING_BUCKET: transferhub-landing
         UPLOAD_URL_EXPIRY_SECONDS: 900
-        JWT_ISSUER: https://auth.example.com
-        JWT_AUDIENCE: transferhub-api
-        JWT_SECRET: local-dev-secret
-        API_KEYS_JSON: '{"customer-a":"local-api-key-a"}'
+        API_KEY_SECRET_ID: api-keys-hub
 
 Resources:
   TransferTable:
@@ -50,17 +46,6 @@ Resources:
           Projection:
             ProjectionType: ALL
 
-  LandingBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: transferhub-landing
-      VersioningConfiguration:
-        Status: Enabled
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-
   TransferHubApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -68,7 +53,7 @@ Resources:
       StageName: prod
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
-        AllowHeaders: "'Content-Type,Authorization,x-api-key'"
+        AllowHeaders: "'Content-Type,x-api-key'"
         AllowOrigin: "'*'"
       Auth:
         DefaultAuthorizer: TransferHubRequestAuthorizer
@@ -79,7 +64,6 @@ Resources:
             FunctionArn: !GetAtt AuthorizerFunction.Arn
             Identity:
               Headers:
-                - Authorization
                 - x-api-key
               ReauthorizeEvery: 0
 
@@ -91,6 +75,11 @@ Resources:
       Timeout: 10
       Policies:
         - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:api-keys-hub*'
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -107,10 +96,15 @@ Resources:
       Handler: src/api/handler.handler
       Policies:
         - AWSLambdaBasicExecutionRole
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:api-keys-hub*'
         - DynamoDBCrudPolicy:
             TableName: !Ref TransferTable
         - S3CrudPolicy:
-            BucketName: !Ref LandingBucket
+            BucketName: transferhub-landing
       Events:
         HealthRoute:
           Type: Api
@@ -142,4 +136,4 @@ Outputs:
   TransferTableName:
     Value: !Ref TransferTable
   LandingBucketName:
-    Value: !Ref LandingBucket
+    Value: transferhub-landing

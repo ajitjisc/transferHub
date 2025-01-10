@@ -70,37 +70,17 @@ describe('routeRequest', () => {
     expect(parsed.data.status).toBe('ok');
   });
 
-  it('enforces scopes for protected routes', async () => {
+  it('requires authorizer context for protected routes', async () => {
     const response = await routeRequest(
       createEvent({
         httpMethod: 'GET',
-        path: '/v1/metrics',
-        requestContext: {
-          accountId: '123',
-          apiId: 'api',
-          httpMethod: 'GET',
-          identity: {} as never,
-          path: '/v1/metrics',
-          protocol: 'HTTP/1.1',
-          requestId: 'req-2',
-          requestTimeEpoch: Date.now(),
-          resourceId: 'resource',
-          resourcePath: '/v1/metrics',
-          stage: 'prod',
-          authorizer: {
-            principalId: 'customer-a',
-            producer: 'customer-a',
-            sub: 'customer-a',
-            scope: 'transfer:read',
-            apiKeyOwner: 'customer-a'
-          }
-        } as never
+        path: '/v1/metrics'
       }),
       services
     );
 
-    expect(response.statusCode).toBe(403);
-    expect(JSON.parse(response.body).error.code).toBe('FORBIDDEN');
+    expect(response.statusCode).toBe(401);
+    expect(JSON.parse(response.body).error.code).toBe('UNAUTHORIZED');
   });
 
   it('returns 201 for data product creation', async () => {
@@ -130,8 +110,6 @@ describe('routeRequest', () => {
           authorizer: {
             principalId: 'customer-a',
             producer: 'customer-a',
-            sub: 'customer-a',
-            scope: 'data-product:create',
             apiKeyOwner: 'customer-a'
           }
         } as never

@@ -20,7 +20,7 @@ That gives platform teams better traceability, producers clearer contracts, and 
 ```mermaid
 flowchart LR
     Producer["External Producer"] --> Api["API Gateway"]
-    Api --> Auth["Lambda Authorizer<br/>API key + JWT"]
+    Api --> Auth["Lambda Authorizer<br/>API key"]
     Auth --> App["TransferHub API Lambda"]
     App --> DDB["DynamoDB<br/>metadata + audit"]
     App --> S3["S3 Landing Bucket"]
@@ -39,25 +39,16 @@ flowchart LR
 
 ## Authentication design
 
-All protected endpoints require both:
+All protected endpoints require:
 
-- `Authorization: Bearer <jwt>`
 - `x-api-key: <client-api-key>`
 
-The Lambda authorizer validates:
-
-1. the JWT signature using `JWT_SECRET`
-2. `iss` matches `JWT_ISSUER`
-3. `aud` matches `JWT_AUDIENCE`
-4. the API key maps to a known producer from `API_KEYS_JSON`
-5. the JWT `sub` and `producer` match the API key owner
-
-Endpoint-level authorization then checks scopes such as `data-product:create`, `transfer:submit`, and `metrics:read`.
+The Lambda authorizer validates the API key against `API_KEYS_JSON` and maps the caller to a producer identity. Every route except `GET /v1/health` is protected by that authorizer.
 
 ## Project structure
 
 ```text
-transferhub/
+transferHub/
   src/
     config.ts
     api/
@@ -66,9 +57,7 @@ transferhub/
       response.ts
     auth/
       authorizer.ts
-      jwt.ts
       apiKey.ts
-      scopes.ts
     services/
       dataProductService.ts
       transferIntentService.ts
@@ -103,11 +92,11 @@ TRANSFER_TABLE=transferhub-transfers
 LANDING_BUCKET=transferhub-landing
 AWS_REGION=eu-west-2
 UPLOAD_URL_EXPIRY_SECONDS=900
-JWT_ISSUER=https://auth.example.com
-JWT_AUDIENCE=transferhub-api
-JWT_SECRET=local-dev-secret
+API_KEY_SECRET_ID=
 API_KEYS_JSON={"customer-a":"local-api-key-a"}
 ```
+
+For local development, you can leave `API_KEY_SECRET_ID` empty and use the direct `API_KEYS_JSON` value from `.env`. In AWS, set `API_KEY_SECRET_ID` and let the Lambda functions load API keys from Secrets Manager at runtime.
 
 ## Local setup
 
@@ -154,9 +143,37 @@ The test suite covers:
 - transfer intent creation and lifecycle transitions
 - validation pass/fail behavior
 - metrics aggregation
-- route and scope enforcement
+- route protection and authorizer enforcement
 
 ## SAM deployment
+
+Before deploying:
+
+1. Create the landing bucket manually in S3.
+2. Create a Secrets Manager secret containing the API key configuration.
+
+Example Secrets Manager secret JSON:
+
+```json
+{
+  "API_KEYS_JSON": {
+    "customer-a": "replace-with-a-real-api-key"
+  }
+}
+```
+
+Recommended value generation:
+
+- `API_KEYS_JSON`: a JSON object mapping producer ids to API keys
+
+Example local generation commands:
+
+```bash
+openssl rand -base64 48
+openssl rand -hex 32
+```
+
+Those are good for generating client API keys.
 
 ```bash
 sam build
@@ -168,9 +185,15 @@ Resources created by `template.yaml`:
 - API Gateway REST API
 - Lambda Authorizer
 - TransferHub API Lambda
-- DynamoDB single-table metadata store with `GSI1`
-- S3 landing bucket with encryption and versioning
+- DynamoDB single-table metadata store `transferhub-transfers` with `GSI1`
 - IAM permissions for DynamoDB and S3 access
+
+Resources expected to already exist:
+
+- the S3 landing bucket `transferhub-landing`
+- the Secrets Manager secret named `api-keys-hub`
+
+SAM CLI deploy packaging is configured via `samconfig.toml` to upload build artifacts into the existing `transferhub-landing` bucket under the `sam-artifacts/transferHub/` prefix. This is separate from the runtime landing data paths, which use the `landing/` prefix.
 
 ## API lifecycle with Postman
 
@@ -178,7 +201,6 @@ Create a Postman collection for TransferHub and define these collection or envir
 
 - `baseUrl` = `http://127.0.0.1:3000`
 - `apiKey` = `local-api-key-a`
-- `jwt` = `<signed-jwt>`
 - `dataProductId` = leave blank initially
 - `intentId` = leave blank initially
 - `ordersUploadUrl` = leave blank initially
@@ -186,7 +208,6 @@ Create a Postman collection for TransferHub and define these collection or envir
 
 For all protected API requests, add these headers:
 
-- `Authorization: Bearer {{jwt}}`
 - `x-api-key: {{apiKey}}`
 
 ### 1. Create a data product
@@ -269,7 +290,7 @@ This returns a pre-signed PUT URL for each expected file. Save:
 
 ### 4. Upload files to S3
 
-Create two separate Postman requests that do not use the JWT or API key headers, because the pre-signed URLs already authorize the upload.
+Create two separate Postman requests that do not use the API key header, because the pre-signed URLs already authorize the upload.
 
 Request 1:
 

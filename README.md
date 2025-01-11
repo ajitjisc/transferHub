@@ -45,45 +45,6 @@ All protected endpoints require:
 
 The Lambda authorizer validates the API key against `API_KEYS_JSON` and maps the caller to a producer identity. Every route except `GET /v1/health` is protected by that authorizer.
 
-## Project structure
-
-```text
-transferHub/
-  src/
-    config.ts
-    api/
-      handler.ts
-      routes.ts
-      response.ts
-    auth/
-      authorizer.ts
-      apiKey.ts
-    services/
-      dataProductService.ts
-      transferIntentService.ts
-      uploadUrlService.ts
-      validationService.ts
-      transferEventService.ts
-      metricsService.ts
-      dashboardService.ts
-    repositories/
-      dynamoRepository.ts
-      s3Repository.ts
-    models/
-      dataProduct.ts
-      transferIntent.ts
-      transferEvent.ts
-      validation.ts
-      auth.ts
-      metrics.ts
-    utils/
-      id.ts
-      date.ts
-      validation.ts
-  tests/
-  sample_data/
-  template.yaml
-```
 
 ## Environment variables
 
